@@ -9,14 +9,25 @@ find_package(Threads REQUIRED)
 
 file(GLOB_RECURSE MESENCE_CORE_SOURCES CONFIGURE_DEPENDS
 	"Core/*.cpp"
-	"Linux/*.c"
-	"Linux/*.cpp"
 	"Lua/*.c"
 	"Sdl/*.cpp"
 	"SevenZip/*.c"
 	"Utilities/*.c"
 	"Utilities/*.cpp"
 )
+
+if(WIN32)
+	file(GLOB_RECURSE MESENCE_PLATFORM_SOURCES CONFIGURE_DEPENDS "Windows/*.cpp")
+elseif(APPLE)
+	enable_language(OBJCXX)
+	file(GLOB_RECURSE MESENCE_PLATFORM_SOURCES CONFIGURE_DEPENDS "MacOS/*.mm")
+elseif(UNIX AND NOT ANDROID)
+	file(GLOB_RECURSE MESENCE_PLATFORM_SOURCES CONFIGURE_DEPENDS "Linux/*.c" "Linux/*.cpp")
+else()
+	message(FATAL_ERROR "The complete MesenCE runtime has no maintained platform target for this host")
+endif()
+
+list(APPEND MESENCE_CORE_SOURCES ${MESENCE_PLATFORM_SOURCES})
 
 add_library(mesence_core STATIC ${MESENCE_CORE_SOURCES})
 target_compile_features(mesence_core PUBLIC cxx_std_17)
@@ -28,6 +39,17 @@ target_include_directories(mesence_core PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/Utilities
 )
 target_link_libraries(mesence_core PUBLIC SDL2::SDL2 Threads::Threads ${CMAKE_DL_LIBS})
+if(WIN32)
+	target_compile_definitions(mesence_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+	target_link_libraries(mesence_core PUBLIC iphlpapi setupapi shlwapi winmm ws2_32)
+elseif(APPLE)
+	target_link_libraries(mesence_core PUBLIC
+		"-framework Cocoa"
+		"-framework CoreHaptics"
+		"-framework Foundation"
+		"-framework GameController"
+	)
+endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 	target_compile_options(mesence_core PRIVATE -Wno-return-type-c-linkage -Wno-undefined-inline)
 endif()

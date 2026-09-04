@@ -1,0 +1,80 @@
+name: Port runtime proof
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes clang-18 cmake ninja-build libsdl2-dev
+      - name: Configure with Clang and Ninja
+        run: >-
+          cmake -S . -B build/port-runtime -G Ninja
+          -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build synthetic runtime proof
+        run: cmake --build build/port-runtime --target mesence_nes_port_test --parallel 4
+      - name: Execute synthetic runtime proof
+        run: ctest --test-dir build/port-runtime --output-on-failure
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Select pinned Apple toolchain
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+      - name: Install build dependencies
+        run: brew install ninja sdl2
+      - name: Configure with AppleClang and Ninja
+        run: cmake -S . -B build/port-runtime -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build synthetic runtime proof
+        run: cmake --build build/port-runtime --target mesence_nes_port_test --parallel 4
+      - name: Execute synthetic runtime proof
+        run: ctest --test-dir build/port-runtime --output-on-failure
+
+  windows:
+    runs-on: windows-2025-vs2026
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+      - name: Pin vcpkg dependency toolchain
+        shell: pwsh
+        run: |
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch https://github.com/microsoft/vcpkg.git 04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4
+          git -C $env:VCPKG_INSTALLATION_ROOT checkout 04a9d8e5212d01ee1dd9478eadd9caade4f8b0d4
+          & "$env:VCPKG_INSTALLATION_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+          & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install sdl2:x64-windows
+      - name: Configure with clang-cl and Ninja
+        shell: pwsh
+        run: |
+          cmake -S . -B build/port-runtime -G Ninja `
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Build synthetic runtime proof
+        run: cmake --build build/port-runtime --target mesence_nes_port_test --parallel 4
+      - name: Execute synthetic runtime proof
+        run: ctest --test-dir build/port-runtime --output-on-failure
