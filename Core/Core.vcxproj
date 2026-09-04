@@ -560,6 +560,7 @@
     <ClInclude Include="NES\APU\NesApu.h" />
     <ClInclude Include="NES\NesConsole.h" />
     <ClInclude Include="NES\NesCpu.h" />
+    <ClInclude Include="NES\Port\NesPortExecution.h" />
     <ClInclude Include="NES\Debugger\NesDisUtils.h" />
     <ClInclude Include="NES\Debugger\NesDebugger.h" />
     <ClInclude Include="NES\NesHeader.h" />
@@ -937,6 +938,7 @@
     <ClCompile Include="NES\APU\NesApu.cpp" />
     <ClCompile Include="NES\NesConsole.cpp" />
     <ClCompile Include="NES\NesCpu.cpp" />
+    <ClCompile Include="NES\Port\NesPortExecution.cpp" />
     <ClCompile Include="NES\Debugger\NesDisUtils.cpp" />
     <ClCompile Include="NES\Debugger\NesDebugger.cpp" />
     <ClCompile Include="NES\NesHeader.cpp" />
