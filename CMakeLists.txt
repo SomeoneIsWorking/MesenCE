@@ -48,7 +48,21 @@ target_include_directories(mesence_core PUBLIC
 target_link_libraries(mesence_core PUBLIC SDL2::SDL2 Threads::Threads ${CMAKE_DL_LIBS})
 if(WIN32)
 	target_compile_definitions(mesence_core PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-	target_link_libraries(mesence_core PUBLIC iphlpapi setupapi shlwapi winmm ws2_32)
+	target_link_libraries(mesence_core PUBLIC
+		comctl32
+		d3d11
+		d3dcompiler
+		dinput8
+		dsound
+		dxgi
+		dxguid
+		iphlpapi
+		setupapi
+		shlwapi
+		winmm
+		ws2_32
+		Xinput9_1_0
+	)
 elseif(APPLE)
 	target_link_libraries(mesence_core PUBLIC
 		"-framework Cocoa"

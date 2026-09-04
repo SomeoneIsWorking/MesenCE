@@ -3,6 +3,7 @@
 
 #ifdef _WIN32
 	#include <Windows.h>
+	#include <mmsystem.h>
 #else
 	#if defined(__x86_64__) || defined(_M_X64)
 		#include <immintrin.h>
