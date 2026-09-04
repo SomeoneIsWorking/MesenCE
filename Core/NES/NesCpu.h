@@ -8,6 +8,7 @@
 	#include "pch.h"
 	#include "Utilities/ISerializable.h"
 	#include "NesTypes.h"
+	#include "NES/Port/NesPortExecution.h"
 	#include "Shared/MemoryOperationType.h"
 
 enum class ConsoleRegion;
@@ -72,6 +73,7 @@ private:
 	__forceinline uint16_t FetchOperand();
 	__forceinline void EndCpuCycle(bool forRead);
 	void IRQ();
+	NesPortInstructionAction ExecutePortInstruction(INesPortInstructionHook* hook);
 
 	uint8_t GetOPCode()
 	{
@@ -881,6 +883,10 @@ public:
 
 	void Reset(bool softReset, ConsoleRegion region);
 	void Exec();
+	NesPortInstructionAction ExecPort(INesPortInstructionHook& hook);
+
+	NesPortCpuBoundaryState GetPortBoundaryState() const;
+	void SetPortBoundaryState(const NesPortCpuBoundaryState& state);
 
 	NesCpuState& GetState()
 	{
