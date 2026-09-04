@@ -14,6 +14,7 @@
 #include "Shared/EmuSettings.h"
 #include "Shared/Emulator.h"
 #include "Shared/MemoryOperationType.h"
+#include "NES/Port/NesPortExecution.h"
 
 NesCpu::NesCpu(NesConsole* console)
 {
@@ -169,8 +170,27 @@ void NesCpu::Reset(bool softReset, ConsoleRegion region)
 
 void NesCpu::Exec()
 {
+	ExecutePortInstruction(nullptr);
+}
+
+NesPortInstructionAction NesCpu::ExecPort(INesPortInstructionHook& hook)
+{
+	return ExecutePortInstruction(&hook);
+}
+
+NesPortInstructionAction NesCpu::ExecutePortInstruction(INesPortInstructionHook* hook)
+{
 #ifndef DUMMYCPU
+	if(hook) {
+		NesPortInstructionContext context(*_console, *this);
+		NesPortInstructionAction action = hook->OnBeforeInstruction(context);
+		if(action != NesPortInstructionAction::Continue) {
+			return action;
+		}
+	}
 	_emu->ProcessInstruction<CpuType::Nes>();
+#else
+	(void)hook;
 #endif
 
 	uint8_t opCode = GetOPCode();
@@ -181,6 +201,61 @@ void NesCpu::Exec()
 	if(_prevRunIrq || _prevNeedNmi) {
 		IRQ();
 	}
+	return NesPortInstructionAction::Continue;
+}
+
+NesPortCpuBoundaryState NesCpu::GetPortBoundaryState() const
+{
+	return {
+		_state,
+		_masterClock,
+		_operand,
+		_instAddrMode,
+		_ppuOffset,
+		_startClockCount,
+		_endClockCount,
+		_spriteDmaOffset,
+		_irqMask,
+		_needHalt,
+		_spriteDmaTransfer,
+		_dmcDmaRunning,
+		_abortDmcDma,
+		_needDummyRead,
+		_cpuWrite,
+		_prevRunIrq,
+		_runIrq,
+		_prevNmiFlag,
+		_prevNeedNmi,
+		_needNmi,
+		_crashed,
+		_isDmcDmaRead,
+	};
+}
+
+void NesCpu::SetPortBoundaryState(const NesPortCpuBoundaryState& state)
+{
+	_state = state.Cpu;
+	_masterClock = state.MasterClock;
+	_operand = state.Operand;
+	_instAddrMode = state.InstructionAddressMode;
+	_ppuOffset = state.PpuOffset;
+	_startClockCount = state.StartClockCount;
+	_endClockCount = state.EndClockCount;
+	_spriteDmaOffset = state.SpriteDmaOffset;
+	_irqMask = state.IrqMask;
+	_needHalt = state.NeedHalt;
+	_spriteDmaTransfer = state.SpriteDmaTransfer;
+	_dmcDmaRunning = state.DmcDmaRunning;
+	_abortDmcDma = state.AbortDmcDma;
+	_needDummyRead = state.NeedDummyRead;
+	_cpuWrite = state.CpuWrite;
+	_prevRunIrq = state.PreviousRunIrq;
+	_runIrq = state.RunIrq;
+	_prevNmiFlag = state.PreviousNmiFlag;
+	_prevNeedNmi = state.PreviousNeedNmi;
+	_needNmi = state.NeedNmi;
+	_crashed = state.Crashed;
+	_isDmcDmaRead = state.IsDmcDmaRead;
 }
 
 void NesCpu::IRQ()

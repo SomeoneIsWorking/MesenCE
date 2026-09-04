@@ -8,6 +8,9 @@
 
 class Emulator;
 class NesCpu;
+class INesPortInstructionHook;
+struct NesPortRunResult;
+enum class NesPortStateLoadResult : uint8_t;
 class BaseNesPpu;
 class NesApu;
 class NesMemoryManager;
@@ -97,6 +100,9 @@ public:
 	void Reset() override;
 	LoadRomResult LoadRom(VirtualFile& romFile) override;
 	void RunFrame() override;
+	NesPortRunResult RunPortInstructions(uint64_t instructionBudget, INesPortInstructionHook& hook);
+	std::vector<uint8_t> SavePortMachineState();
+	NesPortStateLoadResult LoadPortMachineState(const std::vector<uint8_t>& state);
 	BaseControlManager* GetControlManager() override;
 	double GetFps() override;
 	uint32_t GetFrameCount() override;

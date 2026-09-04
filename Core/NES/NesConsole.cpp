@@ -35,6 +35,7 @@
 #include "Netplay/GameClient.h"
 #include "Debugger/DebugTypes.h"
 #include "Utilities/Serializer.h"
+#include "NES/Port/NesPortExecution.h"
 #include "Utilities/sha1.h"
 
 NesConsole::NesConsole(Emulator* emu)
@@ -289,6 +290,48 @@ void NesConsole::RunFrame()
 	} else {
 		InternalRunFrame<false>();
 	}
+}
+
+NesPortRunResult NesConsole::RunPortInstructions(uint64_t instructionBudget, INesPortInstructionHook& hook)
+{
+	NesPortRunResult result;
+	for(uint64_t instruction = 0; instruction < instructionBudget; instruction++) {
+		NesPortInstructionAction action = _cpu->ExecPort(hook);
+		if(action == NesPortInstructionAction::Stop) {
+			result.Stop = NesPortRunStop::HookRequested;
+			result.ProgramCounter = _cpu->GetPC();
+			return result;
+		}
+		if(action == NesPortInstructionAction::NativeHandled) {
+			result.NativeInstructions++;
+		} else {
+			result.CoreInstructions++;
+		}
+	}
+	result.ProgramCounter = _cpu->GetPC();
+	return result;
+}
+
+std::vector<uint8_t> NesConsole::SavePortMachineState()
+{
+	std::ostringstream stream(std::ios::binary);
+	_emu->Serialize(stream, false, 0);
+	std::string bytes = stream.str();
+	return { bytes.begin(), bytes.end() };
+}
+
+NesPortStateLoadResult NesConsole::LoadPortMachineState(const std::vector<uint8_t>& state)
+{
+	std::string bytes(state.begin(), state.end());
+	std::istringstream stream(bytes, std::ios::binary);
+	DeserializeResult result = _emu->Deserialize(stream, SaveStateManager::FileFormatVersion, false, ConsoleType::Nes, false);
+	if(result == DeserializeResult::Success) {
+		return NesPortStateLoadResult::Loaded;
+	}
+	if(result == DeserializeResult::InvalidFile) {
+		return NesPortStateLoadResult::InvalidState;
+	}
+	return NesPortStateLoadResult::IncompatibleState;
 }
 
 template<bool isDualSystem>
