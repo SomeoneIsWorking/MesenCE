@@ -286,6 +286,12 @@
     <ClInclude Include="NES\NesCpu.h">
       <Filter>NES</Filter>
     </ClInclude>
+    <ClCompile Include="NES\Port\NesPortExecution.cpp">
+      <Filter>NES</Filter>
+    </ClCompile>
+    <ClInclude Include="NES\Port\NesPortExecution.h">
+      <Filter>NES</Filter>
+    </ClInclude>
     <ClCompile Include="NES\NesDefaultVideoFilter.cpp">
       <Filter>NES</Filter>
     </ClCompile>
