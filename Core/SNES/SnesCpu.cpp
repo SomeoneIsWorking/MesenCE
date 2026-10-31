@@ -42,6 +42,45 @@ void SnesCpu::Exec()
 	}
 }
 
+SnesPortInstructionAction SnesCpu::ExecPort(ISnesPortInstructionHook& hook)
+{
+#ifndef DUMMYCPU
+	SnesPortInstructionContext context(*_console, *this);
+	SnesPortInstructionAction action = hook.OnBeforeInstruction(context);
+	if(action != SnesPortInstructionAction::Continue) {
+		return action;
+	}
+
+	_immediateMode = false;
+	_readWriteMask = 0xFFFFFF;
+
+	if(_state.StopState == SnesCpuStopState::Running) {
+		_emu->ProcessInstruction<CpuType::Snes>();
+		RunOp();
+		CheckForInterrupts();
+	} else {
+		ProcessHaltedState();
+	}
+	return SnesPortInstructionAction::Continue;
+#else
+	(void)hook;
+	return SnesPortInstructionAction::Continue;
+#endif
+}
+
+SnesPortCpuBoundaryState SnesCpu::GetPortBoundaryState() const
+{
+	return { _state, _operand, _readWriteMask, _immediateMode };
+}
+
+void SnesCpu::SetPortBoundaryState(const SnesPortCpuBoundaryState& state)
+{
+	_state = state.Cpu;
+	_operand = state.Operand;
+	_readWriteMask = state.ReadWriteMask;
+	_immediateMode = state.ImmediateMode;
+}
+
 void SnesCpu::CheckForInterrupts()
 {
 #ifndef DUMMYCPU

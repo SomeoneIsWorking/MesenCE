@@ -80,4 +80,8 @@ if(MESENCE_BUILD_PORT_TESTS)
 	add_executable(mesence_nes_port_test tests/NesPortExecutionTest.cpp)
 	target_link_libraries(mesence_nes_port_test PRIVATE mesence_core)
 	add_test(NAME mesence_nes_port_test COMMAND mesence_nes_port_test)
+
+	add_executable(mesence_snes_port_test tests/SnesPortExecutionTest.cpp)
+	target_link_libraries(mesence_snes_port_test PRIVATE mesence_core)
+	add_test(NAME mesence_snes_port_test COMMAND mesence_snes_port_test)
 endif()

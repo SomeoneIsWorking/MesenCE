@@ -7,6 +7,7 @@
 
 	#include "pch.h"
 	#include "SNES/SnesCpuTypes.h"
+	#include "SNES/Port/SnesPortExecution.h"
 	#include "Utilities/ISerializable.h"
 	#include "Shared/MemoryOperationType.h"
 
@@ -340,6 +341,10 @@ public:
 
 	void Reset();
 	void Exec();
+
+	SnesPortInstructionAction ExecPort(ISnesPortInstructionHook& hook);
+	SnesPortCpuBoundaryState GetPortBoundaryState() const;
+	void SetPortBoundaryState(const SnesPortCpuBoundaryState& state);
 
 	SnesCpuState& GetState();
 	uint64_t GetCycleCount();

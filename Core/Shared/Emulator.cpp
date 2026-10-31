@@ -260,18 +260,21 @@ void Emulator::ProcessEndOfFrame()
 	bool useSpinWait = !_settings->GetVideoConfig().DisableHighPrecisionFramePacing && (_settings->GetEmulationSpeed() >= 50 && _settings->GetEmulationSpeed() <= 200);
 
 	if(!_isRunAheadFrame) {
-		_frameLimiter->ProcessFrame();
-		while(_frameLimiter->WaitForNextFrame(useSpinWait)) {
-			if(_stopFlag || _frameDelay != GetFrameDelay() || _paused || _pauseOnNextFrame || _lockCounter > 0) {
-				//Need to process another event, stop sleeping
-				break;
+		if(_frameLimiter) {
+			//Only Run() constructs the limiter; direct frame stepping (headless tools) runs unpaced
+			_frameLimiter->ProcessFrame();
+			while(_frameLimiter->WaitForNextFrame(useSpinWait)) {
+				if(_stopFlag || _frameDelay != GetFrameDelay() || _paused || _pauseOnNextFrame || _lockCounter > 0) {
+					//Need to process another event, stop sleeping
+					break;
+				}
 			}
-		}
 
-		double newFrameDelay = GetFrameDelay();
-		if(newFrameDelay != _frameDelay) {
-			_frameDelay = newFrameDelay;
-			_frameLimiter->SetDelay(_frameDelay);
+			double newFrameDelay = GetFrameDelay();
+			if(newFrameDelay != _frameDelay) {
+				_frameDelay = newFrameDelay;
+				_frameLimiter->SetDelay(_frameDelay);
+			}
 		}
 
 		_console->GetControlManager()->ProcessEndOfFrame();

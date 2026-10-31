@@ -8,6 +8,8 @@
 #include "SNES/SnesControlManager.h"
 #include "SNES/SnesMemoryManager.h"
 #include "SNES/SnesDmaController.h"
+#include "SNES/Port/SnesPortExecution.h"
+#include "Shared/SaveStateManager.h"
 #include "SNES/BaseCartridge.h"
 #include "SNES/SpcFileData.h"
 #include "SNES/SnesDefaultVideoFilter.h"
@@ -66,6 +68,63 @@ void SnesConsole::RunFrame()
 	}
 
 	_spc->ProcessEndFrame();
+}
+
+SnesPortRunResult SnesConsole::RunPortInstructions(uint64_t instructionBudget, ISnesPortInstructionHook& hook)
+{
+	SnesPortRunResult result;
+	for(uint64_t instruction = 0; instruction < instructionBudget; instruction++) {
+		SnesPortInstructionAction action = _cpu->ExecPort(hook);
+		if(action == SnesPortInstructionAction::Stop) {
+			SnesCpuState& state = _cpu->GetState();
+			result.Stop = SnesPortRunStop::HookRequested;
+			result.ProgramCounter = state.PC;
+			result.ProgramBank = state.K;
+			return result;
+		}
+		if(action == SnesPortInstructionAction::NativeHandled) {
+			result.NativeInstructions++;
+		} else {
+			result.CoreInstructions++;
+		}
+	}
+
+	SnesCpuState& state = _cpu->GetState();
+	result.ProgramCounter = state.PC;
+	result.ProgramBank = state.K;
+	return result;
+}
+
+uint8_t SnesConsole::DebugRead(uint32_t address)
+{
+	return _memoryManager->Peek(address);
+}
+
+void SnesConsole::DebugWrite(uint32_t address, uint8_t value)
+{
+	_memoryManager->Write(address, value, MemoryOperationType::Write);
+}
+
+std::vector<uint8_t> SnesConsole::SavePortMachineState()
+{
+	std::ostringstream stream(std::ios::binary);
+	_emu->Serialize(stream, false, 0);
+	std::string bytes = stream.str();
+	return { bytes.begin(), bytes.end() };
+}
+
+SnesPortStateLoadResult SnesConsole::LoadPortMachineState(const std::vector<uint8_t>& state)
+{
+	std::string bytes(state.begin(), state.end());
+	std::istringstream stream(bytes, std::ios::binary);
+	DeserializeResult result = _emu->Deserialize(stream, SaveStateManager::FileFormatVersion, false, ConsoleType::Snes, false);
+	if(result == DeserializeResult::Success) {
+		return SnesPortStateLoadResult::Loaded;
+	}
+	if(result == DeserializeResult::InvalidFile) {
+		return SnesPortStateLoadResult::InvalidState;
+	}
+	return SnesPortStateLoadResult::IncompatibleState;
 }
 
 void SnesConsole::ProcessEndOfFrame()
