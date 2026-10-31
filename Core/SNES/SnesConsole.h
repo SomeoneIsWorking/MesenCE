@@ -9,6 +9,9 @@
 class SnesCpu;
 class SnesPpu;
 class Spc;
+class ISnesPortInstructionHook;
+struct SnesPortRunResult;
+enum class SnesPortStateLoadResult : uint8_t;
 class BaseCartridge;
 class SnesMemoryManager;
 class InternalRegisters;
@@ -79,6 +82,10 @@ public:
 
 	void RunFrame() override;
 
+	SnesPortRunResult RunPortInstructions(uint64_t instructionBudget, ISnesPortInstructionHook& hook);
+	std::vector<uint8_t> SavePortMachineState();
+	SnesPortStateLoadResult LoadPortMachineState(const std::vector<uint8_t>& state);
+
 	void ProcessEndOfFrame();
 
 	LoadRomResult LoadRom(VirtualFile& romFile) override;
@@ -109,6 +116,9 @@ public:
 
 	AddressInfo GetAbsoluteAddress(AddressInfo& relAddress) override;
 	AddressInfo GetRelativeAddress(AddressInfo& absAddress, CpuType cpuType) override;
+
+	uint8_t DebugRead(uint32_t address);
+	void DebugWrite(uint32_t address, uint8_t value);
 	void GetConsoleState(BaseState& state, ConsoleType consoleType) override;
 
 	void InitializeRam(void* data, uint32_t length);
