@@ -5,6 +5,7 @@
 #include "SNES/SnesConsole.h"
 #include "SNES/SnesMemoryManager.h"
 #include "SNES/SnesPpu.h"
+#include "SNES/Spc.h"
 #include "SNES/Input/SnesController.h"
 #include "Shared/BaseControlDevice.h"
 #include "Shared/BaseControlManager.h"
@@ -245,6 +246,8 @@ int main(int argc, char** argv)
 				WriteFrame(std::filesystem::path(outDir) / (std::string(name) + ".ppm"), *console->GetPpu());
 				std::ofstream wram(std::filesystem::path(outDir) / (std::string(name) + ".wram"), std::ios::binary);
 				wram.write(reinterpret_cast<char*>(console->GetMemoryManager()->DebugGetWorkRam()), 0x20000);
+				std::ofstream dsp(std::filesystem::path(outDir) / (std::string(name) + ".dsp"), std::ios::binary);
+				dsp.write(reinterpret_cast<char*>(console->GetSpc()->GetDspState().Regs), 128);
 			}
 		}
 		emu.Release();
