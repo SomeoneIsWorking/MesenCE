@@ -34,6 +34,11 @@ SnesPpu::SnesPpu(Emulator* emu, SnesConsole* console)
 	_outputBuffers[1] = new uint16_t[512 * 478];
 	memset(_outputBuffers[0], 0, 512 * 478 * sizeof(uint16_t));
 	memset(_outputBuffers[1], 0, 512 * 478 * sizeof(uint16_t));
+
+	_widescreenBuffers[0] = new uint16_t[512 * 239];
+	_widescreenBuffers[1] = new uint16_t[512 * 239];
+	memset(_widescreenBuffers[0], 0, 512 * 239 * sizeof(uint16_t));
+	memset(_widescreenBuffers[1], 0, 512 * 239 * sizeof(uint16_t));
 }
 
 SnesPpu::~SnesPpu()
@@ -41,6 +46,8 @@ SnesPpu::~SnesPpu()
 	delete[] _vram;
 	delete[] _outputBuffers[0];
 	delete[] _outputBuffers[1];
+	delete[] _widescreenBuffers[0];
+	delete[] _widescreenBuffers[1];
 }
 
 void SnesPpu::PowerOn()
@@ -52,6 +59,7 @@ void SnesPpu::PowerOn()
 	_memoryManager = _console->GetMemoryManager();
 
 	_currentBuffer = _outputBuffers[0];
+	_widescreenBuffer = _widescreenBuffers[0];
 
 	_state = {};
 	_state.ForcedBlank = true;
@@ -140,34 +148,44 @@ void SnesPpu::GetState(SnesPpuState& state, bool returnPartialState)
 	state.FrameCount = _frameCount;
 }
 
+int SnesPpu::FloorDiv8(int value)
+{
+	return value >= 0 ? (value >> 3) : -(((-value) + 7) >> 3);
+}
+
 template<bool hiResMode>
 void SnesPpu::GetTilemapData(uint8_t layerIndex, uint8_t columnIndex)
+{
+	FetchTilemapData(layerIndex, columnIndex, _layerData[layerIndex].Tiles[columnIndex], hiResMode, _hOffset, _vOffset);
+}
+
+void SnesPpu::FetchTilemapData(uint8_t layerIndex, int screenTileColumn, TileData& tile, bool hiResMode, uint16_t hOffset, uint16_t vOffset)
 {
 	/* The current layer's options */
 	LayerConfig& config = _state.Layers[layerIndex];
 
-	uint16_t vScroll = config.VScroll;
-	uint16_t hScroll = hiResMode ? (config.HScroll << 1) : config.HScroll;
-	if(_hOffset || _vOffset) {
+	uint16_t vScrollValue = config.VScroll;
+	uint16_t hScrollValue = hiResMode ? (config.HScroll << 1) : config.HScroll;
+	if(hOffset || vOffset) {
 		uint16_t enableBit = layerIndex == 0 ? 0x2000 : 0x4000;
 		if(_state.BgMode == 4) {
-			if((_hOffset & 0x8000) == 0 && (_hOffset & enableBit)) {
-				hScroll = (hScroll & 0x07) | (_hOffset & 0x3F8);
+			if((hOffset & 0x8000) == 0 && (hOffset & enableBit)) {
+				hScrollValue = (hScrollValue & 0x07) | (hOffset & 0x3F8);
 			}
-			if((_hOffset & 0x8000) != 0 && (_hOffset & enableBit)) {
-				vScroll = (_hOffset & 0x3FF);
+			if((hOffset & 0x8000) != 0 && (hOffset & enableBit)) {
+				vScrollValue = (hOffset & 0x3FF);
 			}
 		} else {
-			if(_hOffset & enableBit) {
-				hScroll = (hScroll & 0x07) | (_hOffset & 0x3F8);
+			if(hOffset & enableBit) {
+				hScrollValue = (hScrollValue & 0x07) | (hOffset & 0x3F8);
 			}
-			if(_vOffset & enableBit) {
-				vScroll = (_vOffset & 0x3FF);
+			if(vOffset & enableBit) {
+				vScrollValue = (vOffset & 0x3FF);
 			}
 		}
 	}
 	if(hiResMode) {
-		hScroll >>= 1;
+		hScrollValue >>= 1;
 	}
 
 	uint16_t realY = IsDoubleHeight() ? (_oddFrame ? ((_scanline << 1) + 1) : (_scanline << 1)) : _scanline;
@@ -181,7 +199,7 @@ void SnesPpu::GetTilemapData(uint8_t layerIndex, uint8_t columnIndex)
 	}
 
 	/* The current row of tiles (e.g scanlines 16-23 is row 2) */
-	uint16_t row = (realY + vScroll) >> (config.LargeTiles ? 4 : 3);
+	uint16_t row = (realY + vScrollValue) >> (config.LargeTiles ? 4 : 3);
 
 	/* Tilemap offset based on the current row & tilemap size options */
 	uint16_t addrVerticalScrollingOffset = config.DoubleHeight ? ((row & 0x20) << (config.DoubleWidth ? 6 : 5)) : 0;
@@ -190,25 +208,27 @@ void SnesPpu::GetTilemapData(uint8_t layerIndex, uint8_t columnIndex)
 	uint16_t baseOffset = config.TilemapAddress + addrVerticalScrollingOffset + ((row & 0x1F) << 5);
 
 	/* The current column index (in terms of 8x8 or 16x16 tiles) */
-	uint16_t column = columnIndex + (hScroll >> 3);
-	if constexpr(!hiResMode) {
-		if(config.LargeTiles) {
-			//For 16x16 tiles, need to return the same tile for 2 columns 8 pixel columns in a row
-			column >>= 1;
-		}
+	int column = screenTileColumn + (hScrollValue >> 3);
+	if(!hiResMode && config.LargeTiles) {
+		//For 16x16 tiles, need to return the same tile for 2 columns 8 pixel columns in a row
+		column >>= 1;
 	}
 
 	/* The tilemap address to read the tile data from */
 	uint16_t addr = baseOffset + (column & 0x1F) + (config.DoubleWidth ? (column & 0x20) << 5 : 0);
-	_layerData[layerIndex].Tiles[columnIndex].TilemapData = _vram[addr & 0x7FFF];
-	_layerData[layerIndex].Tiles[columnIndex].VScroll = vScroll;
+	tile.TilemapData = _vram[addr & 0x7FFF];
+	tile.VScroll = vScrollValue;
 }
 
 template<bool hiResMode, uint8_t bpp, bool secondTile>
 void SnesPpu::GetChrData(uint8_t layerIndex, uint8_t column, uint8_t plane)
 {
+	FetchTileChrData(layerIndex, column, _layerData[layerIndex].Tiles[column], bpp, plane, secondTile, hiResMode);
+}
+
+void SnesPpu::FetchTileChrData(uint8_t layerIndex, int screenTileColumn, TileData& tileData, uint8_t bpp, uint8_t plane, bool secondTile, bool hiResMode)
+{
 	LayerConfig& config = _state.Layers[layerIndex];
-	TileData& tileData = _layerData[layerIndex].Tiles[column];
 	uint16_t tilemapData = tileData.TilemapData;
 
 	bool largeTileWidth = hiResMode || config.LargeTiles;
@@ -227,11 +247,9 @@ void SnesPpu::GetChrData(uint8_t layerIndex, uint8_t column, uint8_t plane)
 	}
 
 	bool useSecondTile = secondTile;
-	if constexpr(!hiResMode) {
-		if(config.LargeTiles) {
-			//For 16x16 tiles, need to return the 2nd part of the tile every other column
-			useSecondTile = (((column << 3) + config.HScroll) & 0x08) == 0x08;
-		}
+	if(config.LargeTiles) {
+		//For 16x16 tiles, need to return the 2nd part of the tile every other column
+		useSecondTile = (((screenTileColumn * 8) + config.HScroll) & 0x08) == 0x08;
 	}
 
 	uint16_t tileIndex = tilemapData & 0x3FF;
@@ -239,7 +257,7 @@ void SnesPpu::GetChrData(uint8_t layerIndex, uint8_t column, uint8_t plane)
 		tileIndex =
 			tileIndex +
 			(config.LargeTiles ? (((realY + tileData.VScroll) & 0x08) ? (vMirror ? 0 : 16) : (vMirror ? 16 : 0)) : 0) +
-			(largeTileWidth ? (useSecondTile ? (hMirror ? 0 : 1) : (hMirror ? 1 : 0)) : 0);
+			(useSecondTile ? (hMirror ? 0 : 1) : (hMirror ? 1 : 0));
 
 		tileIndex &= 0x3FF;
 	}
@@ -253,7 +271,7 @@ void SnesPpu::GetChrData(uint8_t layerIndex, uint8_t column, uint8_t plane)
 	tileData.ChrData[plane + (secondTile ? bpp / 2 : 0)] = _vram[pixelStart & 0x7FFF];
 }
 
-uint16_t SnesPpu::GetHvOffsetByteAddress(uint8_t columnIndex, bool forVertOffset)
+uint16_t SnesPpu::GetHvOffsetByteAddress(int columnIndex, bool forVertOffset)
 {
 	uint16_t tilemapAddr = _state.Layers[2].TilemapAddress;
 
@@ -262,7 +280,7 @@ uint16_t SnesPpu::GetHvOffsetByteAddress(uint8_t columnIndex, bool forVertOffset
 	uint8_t vShift = _state.Layers[2].LargeTiles ? 4 : 3;
 	uint8_t hShift = _state.BgMode == 6 ? 3 : vShift;
 
-	uint16_t baseColumn = ((columnIndex << 3) + (_state.Layers[2].HScroll & ~0x07)) >> hShift;
+	uint16_t baseColumn = static_cast<uint16_t>((columnIndex * 8) + (_state.Layers[2].HScroll & ~0x07)) >> hShift;
 
 	uint16_t columnOffset = baseColumn & (_state.Layers[2].DoubleWidth ? 0x3F : 0x1F);
 	if(columnOffset >= 0x20) {
@@ -423,6 +441,8 @@ bool SnesPpu::ProcessEndOfScanline(uint16_t& hClock)
 
 				if(!_skipRender) {
 					_currentBuffer = _currentBuffer == _outputBuffers[0] ? _outputBuffers[1] : _outputBuffers[0];
+					_widescreenBuffer = _widescreenBuffer == _widescreenBuffers[0] ? _widescreenBuffers[1] : _widescreenBuffers[0];
+					memset(_widescreenBuffer, 0, 512 * 239 * sizeof(uint16_t));
 
 					//If we're not skipping this frame, reset the high resolution/interlace flags
 					_useHighResOutput = IsDoubleWidth() || _interlacedFrame;
@@ -977,6 +997,10 @@ void SnesPpu::RenderScanline()
 		ApplyColorMath();
 		ApplyBrightness<true>();
 		ApplyHiResMode();
+
+		if(_drawEndX == 255) {
+			ComposeWidescreenLine();
+		}
 
 		_drawStartX = _drawEndX + 1;
 	}
@@ -1576,15 +1600,17 @@ void SnesPpu::ProcessWindowMaskSettings(uint8_t value, uint8_t offset)
 
 void SnesPpu::SendFrame()
 {
-	uint16_t width = _useHighResOutput ? 512 : 256;
-	uint16_t height = _useHighResOutput ? 478 : 239;
+	bool widescreen = IsWidescreenActive();
+	uint16_t width = widescreen ? _widescreen.Width : (_useHighResOutput ? 512 : 256);
+	uint16_t height = widescreen ? 239 : (_useHighResOutput ? 478 : 239);
+	uint16_t* buffer = widescreen ? _widescreenBuffer : _currentBuffer;
 
 	if(!_overscanFrame) {
 		//Clear the top 7 and bottom 8 rows
-		int top = (_useHighResOutput ? 14 : 7);
-		int bottom = (_useHighResOutput ? 16 : 8);
-		memset(_currentBuffer, 0, width * top * sizeof(uint16_t));
-		memset(_currentBuffer + width * (height - bottom), 0, width * bottom * sizeof(uint16_t));
+		int top = widescreen ? 7 : (_useHighResOutput ? 14 : 7);
+		int bottom = widescreen ? 8 : (_useHighResOutput ? 16 : 8);
+		memset(buffer, 0, width * top * sizeof(uint16_t));
+		memset(buffer + width * (height - bottom), 0, width * bottom * sizeof(uint16_t));
 	}
 
 	_emu->GetNotificationManager()->SendNotification(ConsoleNotificationType::PpuFrameDone);
@@ -1595,7 +1621,7 @@ void SnesPpu::SendFrame()
 	}
 	_needFullFrame = false;
 
-	RenderedFrame frame(_currentBuffer, width, height, _useHighResOutput ? 0.5 : 1.0, _frameCount, _console->GetControlManager()->GetPortStates());
+	RenderedFrame frame(buffer, width, height, _useHighResOutput ? 0.5 : 1.0, _frameCount, _console->GetControlManager()->GetPortStates());
 	if(_interlacedFrame) {
 		frame.Flags = FrameFlags::Interlaced;
 	}
@@ -1726,6 +1752,181 @@ bool SnesPpu::IsDoubleHeight()
 bool SnesPpu::IsDoubleWidth()
 {
 	return _state.HiResMode || _state.BgMode == 5 || _state.BgMode == 6;
+}
+
+bool SnesPpu::IsWidescreenActive() const
+{
+	return _widescreen.Enabled && _widescreen.Width > 256 && _widescreen.Width <= 512 && !_useHighResOutput && !_interlacedFrame && !_skipRender;
+}
+
+uint16_t SnesPpu::ApplyWidescreenBrightness(uint16_t pixel)
+{
+	if(_state.ScreenBrightness == 15) {
+		return pixel;
+	}
+	uint16_t r = (pixel & 0x1F) * _state.ScreenBrightness / 15;
+	uint16_t g = ((pixel >> 5) & 0x1F) * _state.ScreenBrightness / 15;
+	uint16_t b = ((pixel >> 10) & 0x1F) * _state.ScreenBrightness / 15;
+	return r | (g << 5) | (b << 10);
+}
+
+uint8_t SnesPpu::GetLayerBpp(uint8_t layerIndex, uint8_t bgMode)
+{
+	switch(bgMode) {
+		case 0: return 2;
+		case 1: return layerIndex < 2 ? 4 : 2;
+		case 2: return 4;
+		case 3: return layerIndex == 0 ? 8 : 4;
+		case 4: return layerIndex == 0 ? 8 : 2;
+		case 5: return layerIndex == 0 ? 4 : 2;
+		case 6: return 4;
+		case 7: return 8;
+		default: return 4;
+	}
+}
+
+void SnesPpu::GetLayerPriorities(uint8_t layerIndex, uint8_t& normalPriority, uint8_t& highPriority) const
+{
+	//Same values as the RenderMode tables above
+	static constexpr uint8_t priorities[8][4][2] = {
+		{ { 8, 11 }, { 7, 10 }, { 2, 5 }, { 1, 4 } },
+		{ { 6, 9 }, { 5, 8 }, { 1, 3 }, { 0, 0 } },
+		{ { 3, 7 }, { 1, 5 }, { 0, 0 }, { 0, 0 } },
+		{ { 3, 7 }, { 1, 5 }, { 0, 0 }, { 0, 0 } },
+		{ { 3, 7 }, { 1, 5 }, { 0, 0 }, { 0, 0 } },
+		{ { 3, 7 }, { 1, 5 }, { 0, 0 }, { 0, 0 } },
+		{ { 1, 5 }, { 0, 0 }, { 0, 0 }, { 0, 0 } },
+		{ { 3, 3 }, { 1, 5 }, { 0, 0 }, { 0, 0 } },
+	};
+	uint8_t mode = _state.BgMode < 8 ? _state.BgMode : 0;
+	uint8_t layer = layerIndex < 4 ? layerIndex : 0;
+	normalPriority = priorities[mode][layer][0];
+	highPriority = priorities[mode][layer][1];
+	if(mode == 1 && layer == 2 && _state.Mode1Bg3Priority) {
+		highPriority = 11;
+	}
+}
+
+uint16_t SnesPpu::SampleWidescreenBg(uint8_t layerIndex, int guestX, uint8_t& priority)
+{
+	const LayerConfig& config = _state.Layers[layerIndex];
+	uint8_t bpp = GetLayerBpp(layerIndex, _state.BgMode);
+	if(bpp == 0) {
+		return 0;
+	}
+
+	int screenTileColumn = FloorDiv8(guestX + (config.HScroll & 0x07));
+	uint16_t hOffset = 0;
+	uint16_t vOffset = 0;
+	if(_state.BgMode == 2 || _state.BgMode == 4 || _state.BgMode == 6) {
+		hOffset = _vram[GetHvOffsetByteAddress(screenTileColumn, false)];
+		vOffset = _vram[GetHvOffsetByteAddress(screenTileColumn, true)];
+	}
+
+	TileData tile = {};
+	FetchTilemapData(layerIndex, screenTileColumn, tile, false, hOffset, vOffset);
+	for(uint8_t plane = 0; plane < bpp / 2; plane++) {
+		FetchTileChrData(layerIndex, screenTileColumn, tile, bpp, plane, false, false);
+	}
+
+	uint8_t xOffset = static_cast<uint8_t>((guestX + config.HScroll) & 0x07);
+	bool hMirror = (tile.TilemapData & 0x4000) != 0;
+	uint8_t shift = hMirror ? xOffset : static_cast<uint8_t>(7 - xOffset);
+	uint8_t color = bpp == 2 ? GetTilePixelColor<2>(tile.ChrData, shift) : (bpp == 8 ? GetTilePixelColor<8>(tile.ChrData, shift) : GetTilePixelColor<4>(tile.ChrData, shift));
+	if(color == 0) {
+		return 0;
+	}
+
+	uint8_t normalPriority = 0;
+	uint8_t highPriority = 0;
+	GetLayerPriorities(layerIndex, normalPriority, highPriority);
+	priority = (tile.TilemapData & 0x2000) ? highPriority : normalPriority;
+
+	uint8_t palette = (tile.TilemapData >> 10) & 0x07;
+	return _cgram[palette * (1 << bpp) + color];
+}
+
+void SnesPpu::ComposeWidescreenLine()
+{
+	if(!IsWidescreenActive()) {
+		return;
+	}
+
+	uint16_t width = _widescreen.Width;
+	int margin = (width - 256) / 2;
+	int row = _overscanFrame ? (static_cast<int>(_scanline) - 1) : (static_cast<int>(_scanline) + 6);
+	if(row < 0 || row >= 239) {
+		return;
+	}
+
+	uint16_t* output = _widescreenBuffer + (row * width);
+	uint16_t backdrop = ApplyWidescreenBrightness(_cgram[0]);
+	for(int x = 0; x < width; x++) {
+		output[x] = backdrop;
+	}
+	for(int x = 0; x < 256; x++) {
+		output[margin + x] = _mainScreenBuffer[x];
+	}
+
+	if(_state.ForcedBlank) {
+		return;
+	}
+
+	uint8_t layers = _widescreen.WorldLayerMask & _state.MainScreenLayers & _configVisibleLayers;
+	if(layers == 0) {
+		return;
+	}
+
+	for(int x = 0; x < width; x++) {
+		if(x >= margin && x < margin + 256) {
+			continue;
+		}
+
+		int guestX = x - margin;
+		uint8_t bestPriority = 0;
+		uint16_t bestColor = 0;
+		for(uint8_t layer = 0; layer < 3; layer++) {
+			if(!((layers >> layer) & 0x01)) {
+				continue;
+			}
+			uint8_t priority = 0;
+			uint16_t color = SampleWidescreenBg(layer, guestX, priority);
+			if(color != 0 && priority > bestPriority) {
+				bestPriority = priority;
+				bestColor = color;
+			}
+		}
+		if(bestColor != 0) {
+			output[x] = ApplyWidescreenBrightness(bestColor);
+		}
+	}
+}
+
+void SnesPpu::SetWidescreenConfig(const SnesWidescreenConfig& config)
+{
+	_widescreen = config;
+	if(_widescreen.Width < 256) {
+		_widescreen.Width = 256;
+	}
+	if(_widescreen.Width > 512) {
+		_widescreen.Width = 512;
+	}
+	_widescreen.Width = static_cast<uint16_t>(_widescreen.Width & ~0x01);
+}
+
+const SnesWidescreenConfig& SnesPpu::GetWidescreenConfig() const
+{
+	return _widescreen;
+}
+
+uint16_t* SnesPpu::GetWidescreenBuffer()
+{
+	return _widescreenBuffer;
+}
+
+uint16_t SnesPpu::GetOutputWidth()
+{
+	return IsWidescreenActive() ? _widescreen.Width : static_cast<uint16_t>(_useHighResOutput ? 512 : 256);
 }
 
 bool SnesPpu::CanAccessCgram()

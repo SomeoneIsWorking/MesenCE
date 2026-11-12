@@ -1,6 +1,7 @@
 #pragma once
 #include "pch.h"
 #include "SNES/SnesPpuTypes.h"
+#include "SNES/SnesWidescreen.h"
 #include "Utilities/ISerializable.h"
 #include "Utilities/Timer.h"
 
@@ -74,6 +75,9 @@ private:
 
 	uint16_t* _outputBuffers[2] = {};
 	uint16_t* _currentBuffer = nullptr;
+	uint16_t* _widescreenBuffers[2] = {};
+	uint16_t* _widescreenBuffer = nullptr;
+	SnesWidescreenConfig _widescreen;
 	bool _useHighResOutput = false;
 	bool _interlacedFrame = false;
 	bool _overscanFrame = false;
@@ -134,7 +138,13 @@ private:
 	template<bool hiResMode, uint8_t bpp, bool secondTile = false>
 	void GetChrData(uint8_t layerIndex, uint8_t column, uint8_t plane);
 
-	uint16_t GetHvOffsetByteAddress(uint8_t columnIndex, bool forVertOffset);
+	void FetchTilemapData(uint8_t layerIndex, int screenTileColumn, TileData& tile, bool hiResMode, uint16_t hOffset, uint16_t vOffset);
+	void FetchTileChrData(uint8_t layerIndex, int screenTileColumn, TileData& tile, uint8_t bpp, uint8_t plane, bool secondTile, bool hiResMode);
+	void GetLayerPriorities(uint8_t layerIndex, uint8_t& normalPriority, uint8_t& highPriority) const;
+	static uint8_t GetLayerBpp(uint8_t layerIndex, uint8_t bgMode);
+	static int FloorDiv8(int value);
+
+	uint16_t GetHvOffsetByteAddress(int columnIndex, bool forVertOffset);
 	void GetHorizontalOffsetByte(uint8_t columnIndex);
 	void GetVerticalOffsetByte(uint8_t columnIndex);
 	void FetchTileData();
@@ -204,6 +214,11 @@ private:
 	bool IsDoubleHeight();
 	bool IsDoubleWidth();
 
+	bool IsWidescreenActive() const;
+	void ComposeWidescreenLine();
+	uint16_t SampleWidescreenBg(uint8_t layerIndex, int guestX, uint8_t& priority);
+	uint16_t ApplyWidescreenBrightness(uint16_t pixel);
+
 	bool CanAccessCgram();
 	bool CanAccessVram();
 
@@ -254,6 +269,11 @@ public:
 	bool IsHighResOutput();
 	uint16_t* GetScreenBuffer();
 	uint16_t* GetPreviousScreenBuffer();
+	uint16_t* GetWidescreenBuffer();
+	uint16_t GetOutputWidth();
+
+	void SetWidescreenConfig(const SnesWidescreenConfig& config);
+	const SnesWidescreenConfig& GetWidescreenConfig() const;
 	uint8_t* GetVideoRam();
 	uint8_t* GetCgRam();
 	uint8_t* GetSpriteRam();
